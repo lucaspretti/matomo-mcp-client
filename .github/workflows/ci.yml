@@ -1,0 +1,28 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [18, 20, 22]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+      - run: npm ci
+      - run: node --check matomo-mcp-client.js
+      - name: Verify server starts
+        run: |
+          MATOMO_HOST=https://example.com MATOMO_TOKEN_AUTH=test node matomo-mcp-client.js &
+          PID=$!
+          sleep 2
+          kill $PID 2>/dev/null
+          wait $PID 2>/dev/null || true
