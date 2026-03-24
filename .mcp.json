@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "matomo": {
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/matomo-mcp-client.js"],
+      "env": {
+        "MATOMO_HOST": "${MATOMO_HOST}",
+        "MATOMO_TOKEN_AUTH": "${MATOMO_TOKEN_AUTH}",
+        "MATOMO_DEFAULT_SITE_ID": "${MATOMO_DEFAULT_SITE_ID}"
+      }
+    }
+  }
+}
