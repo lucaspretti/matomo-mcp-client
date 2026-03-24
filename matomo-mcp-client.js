@@ -160,6 +160,12 @@ function commonParams(args) {
 // ============================================================================
 
 const toolHandlers = {
+    // --- Discovery ---
+    async matomo_list_sites() {
+        const data = await callMatomoAPI('SitesManager.getSitesWithAtLeastViewAccess');
+        return jsonResponse(data);
+    },
+
     // --- Traffic ---
     async matomo_get_visits(args) {
         const data = await callMatomoAPI('VisitsSummary.get', commonParams(args));
@@ -319,6 +325,13 @@ const limitProp = {
 };
 
 const TOOLS = [
+    // --- Discovery ---
+    {
+        name: "matomo_list_sites",
+        description: "List all sites in the Matomo instance with their IDs, names, URLs, and settings. Use this first to discover available site IDs.",
+        inputSchema: { type: "object", properties: {} }
+    },
+
     // --- Traffic ---
     {
         name: "matomo_get_visits",
