@@ -1,0 +1,26 @@
+name: Auto Version
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    if: >-
+      ${{ !contains(github.event.head_commit.message, '[skip ci]') &&
+          !contains(github.event.head_commit.message, '[ci skip]') }}
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Auto Version
+        uses: lucaspretti/auto-version-action@v1
+        with:
+          version-file: package.json
+          production-branch: main
+          github-token: ${{ secrets.GITHUB_TOKEN }}
