@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  matomo-mcp-server:
+    build: .
+    image: matomo-mcp-server:latest
+    container_name: matomo-mcp-server
+    stdin_open: true
+    tty: false
+    env_file:
+      - .env
+    restart: "no"
+    
+    # Environment variables can also be set directly here
+    # (will override .env file)
+    # environment:
+    #   - MATOMO_HOST=https://matomo.example.com
+    #   - MATOMO_TOKEN_AUTH=xxx
+    #   - MATOMO_DEFAULT_SITE_ID=1
