@@ -5,7 +5,13 @@ description: Diagnose page load performance issues. Use when the user asks about
 
 # Performance Diagnostic
 
-Analyze page load performance for the Matomo-tracked site. Follow these steps:
+Analyze page load performance for a Matomo-tracked site.
+
+## Site selection
+
+If $ARGUMENTS contains a site ID or name, use that. If the conversation already has a site in context, use that. Otherwise, call `matomo_list_sites`, present a short numbered list (ID, name, URL), and ask which site to analyze. Do not proceed until a site is selected.
+
+## Steps
 
 1. **Get overall performance** using `matomo_get_page_performance` for the requested period (default: last 7 days, period: day, date: last7)
 

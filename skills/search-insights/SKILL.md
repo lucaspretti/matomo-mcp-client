@@ -7,6 +7,12 @@ description: Analyze site search behavior and content gaps. Use when the user as
 
 Analyze internal site search to understand what visitors are looking for and identify content gaps.
 
+## Site selection
+
+If $ARGUMENTS contains a site ID or name, use that. If the conversation already has a site in context, use that. Otherwise, call `matomo_list_sites`, present a short numbered list (ID, name, URL), and ask which site to analyze. Do not proceed until a site is selected.
+
+## Steps
+
 1. **Top search keywords** using `matomo_get_search_keywords` with limit 20 for the requested period (default: last 30 days, period: day, date: last30)
 
 2. **Failed searches** using `matomo_get_search_no_results` with limit 20 for the same period

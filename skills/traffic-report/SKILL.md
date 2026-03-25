@@ -5,7 +5,13 @@ description: Generate a traffic overview report. Use when the user asks for a tr
 
 # Traffic Report
 
-Generate a comprehensive traffic report for the Matomo-tracked site. Default period is last 7 days unless specified in $ARGUMENTS.
+Generate a comprehensive traffic report for a Matomo-tracked site. Default period is last 7 days unless specified in $ARGUMENTS.
+
+## Site selection
+
+If $ARGUMENTS contains a site ID or name, use that. If the conversation already has a site in context, use that. Otherwise, call `matomo_list_sites`, present a short numbered list (ID, name, URL), and ask which site to analyze. Do not proceed until a site is selected.
+
+## Steps
 
 1. **Visits summary** using `matomo_get_visits` for the requested period
 
