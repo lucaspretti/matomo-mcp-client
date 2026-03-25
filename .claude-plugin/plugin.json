@@ -3,10 +3,6 @@
   "version": "1.2.0",
   "description": "Unofficial community plugin for Matomo Analytics. Query visits, page performance, search keywords, traffic sources, and AI assistant referrals directly from Claude.",
   "author": {
-    "name": "Lucas Pretti",
-    "url": "https://github.com/lucaspretti"
-  },
-  "repository": "https://github.com/lucaspretti/matomo-mcp-client",
-  "license": "MIT",
-  "keywords": ["matomo", "analytics", "web-analytics", "mcp", "performance"]
+    "name": "Lucas Pretti"
+  }
 }
