@@ -1,0 +1,68 @@
+name: Publish Plugin
+
+on:
+  workflow_run:
+    workflows: ["Auto Version"]
+    types: [completed]
+    branches: [main]
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get version from package.json
+        id: version
+        run: echo "version=$(jq -r .version package.json)" >> "$GITHUB_OUTPUT"
+
+      - name: Sync plugin.json version
+        run: |
+          jq --arg v "${{ steps.version.outputs.version }}" \
+            '.version = $v' .claude-plugin/plugin.json > tmp.json
+          mv tmp.json .claude-plugin/plugin.json
+
+      - name: Commit plugin version sync
+        id: commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .claude-plugin/plugin.json
+          if git diff --cached --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          else
+            git commit -m "chore: sync plugin version to ${{ steps.version.outputs.version }} [skip ci]"
+            git push
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Update plugin registry
+        env:
+          REGISTRY_TOKEN: ${{ secrets.PLUGIN_REGISTRY_TOKEN }}
+        run: |
+          git clone https://x-access-token:${REGISTRY_TOKEN}@github.com/lucaspretti/claude-plugins.git /tmp/claude-plugins
+          cd /tmp/claude-plugins
+
+          jq --arg sha "${{ steps.commit.outputs.sha }}" \
+            '(.plugins[] | select(.name == "matomo-analytics")).source.sha = $sha' \
+            .claude-plugin/marketplace.json > tmp.json
+          mv tmp.json .claude-plugin/marketplace.json
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .claude-plugin/marketplace.json
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: update matomo-analytics to ${{ steps.commit.outputs.sha }}"
+            git push
+            echo "Registry updated to ${{ steps.commit.outputs.sha }}"
+          else
+            echo "Registry already up to date"
+          fi
