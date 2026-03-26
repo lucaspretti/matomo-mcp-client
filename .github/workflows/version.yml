@@ -14,12 +14,12 @@ jobs:
       contents: write
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           fetch-depth: 0
 
       - name: Auto Version
-        uses: lucaspretti/auto-version-action@v1
+        uses: lucaspretti/auto-version-action@0404e8beb7e8741a57ea95079e35b65c8d223e68 # v1.5.10
         with:
           version-file: package.json
           production-branch: main
