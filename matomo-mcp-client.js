@@ -146,6 +146,32 @@ function jsonResponse(data) {
     return { content: [{ type: "text", text: JSON.stringify(data, null, 2) }] };
 }
 
+// Filter response data to keep only specified fields.
+// Matomo returns either an array or an object with date keys mapping to arrays.
+function filterResponseFields(data, fields) {
+    const pick = (row) => {
+        const out = {};
+        for (const f of fields) {
+            if (f in row) out[f] = row[f];
+        }
+        return out;
+    };
+
+    if (Array.isArray(data)) {
+        return data.map(pick);
+    }
+
+    if (data && typeof data === 'object') {
+        const result = {};
+        for (const [key, value] of Object.entries(data)) {
+            result[key] = Array.isArray(value) ? value.map(pick) : value;
+        }
+        return result;
+    }
+
+    return data;
+}
+
 // Common params extraction
 function commonParams(args) {
     return {
@@ -298,13 +324,16 @@ const toolHandlers = {
         const params = {
             ...commonParams(args),
             flat: 1,
-            filter_limit: args.limit || 100
+            filter_limit: args.limit || 500
         };
         if (args.urlPattern) {
             params.filter_pattern = args.urlPattern;
         }
         const data = await callMatomoAPI('Actions.getPageUrls', params);
-        return jsonResponse(data);
+        const filtered = filterResponseFields(data, [
+            'label', 'nb_visits', 'nb_hits', 'avg_time_on_page', 'bounce_rate', 'exit_rate'
+        ]);
+        return jsonResponse(filtered);
     },
 
     async matomo_search_events(args) {
@@ -314,13 +343,18 @@ const toolHandlers = {
         const params = {
             ...commonParams(args),
             flat: 1,
-            filter_limit: args.limit || 100
+            filter_limit: args.limit || 500
         };
         if (args.filterPattern) {
             params.filter_pattern = args.filterPattern;
         }
         const data = await callMatomoAPI(method, params);
-        return jsonResponse(data);
+        const filtered = filterResponseFields(data, [
+            'label', 'nb_uniq_visitors', 'nb_visits', 'nb_events',
+            'Events_EventName', 'Events_EventAction', 'Events_EventCategory',
+            'sum_daily_nb_uniq_visitors'
+        ]);
+        return jsonResponse(filtered);
     }
 };
 
@@ -467,7 +501,15 @@ const TOOLS = [
             properties: {
                 ...siteIdProp,
                 ...periodDateProps,
-                ...limitProp,
+                period: {
+                    type: "string",
+                    enum: ["day", "week", "month", "year", "range"],
+                    description: "Time period. Use 'range' with date=YYYY-MM-DD,YYYY-MM-DD (default: day)"
+                },
+                limit: {
+                    type: "number",
+                    description: "Number of results to return (default: 500)"
+                },
                 urlPattern: {
                     type: "string",
                     description: "Regex pattern to filter page URLs (e.g. 'guidelines-epc|guidelines-pct')"
@@ -483,7 +525,15 @@ const TOOLS = [
             properties: {
                 ...siteIdProp,
                 ...periodDateProps,
-                ...limitProp,
+                period: {
+                    type: "string",
+                    enum: ["day", "week", "month", "year", "range"],
+                    description: "Time period. Use 'range' with date=YYYY-MM-DD,YYYY-MM-DD (default: day)"
+                },
+                limit: {
+                    type: "number",
+                    description: "Number of results to return (default: 500)"
+                },
                 dimension: {
                     type: "string",
                     enum: ["action", "category", "name"],

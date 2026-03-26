@@ -21,5 +21,6 @@ Help the user find and select a Matomo site to work with.
    - `/matomo-analytics:traffic-report` for a traffic overview
    - `/matomo-analytics:performance-diagnostic` for page load analysis
    - `/matomo-analytics:search-insights` for site search analysis
+   - `/matomo-analytics:page-events-analysis` for cross-referencing page views with event usage
 
    Or they can ask any analytics question directly and specify the site ID.
