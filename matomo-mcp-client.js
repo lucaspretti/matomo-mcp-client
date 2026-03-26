@@ -291,6 +291,36 @@ const toolHandlers = {
             filter_limit: args.limit || 10
         });
         return jsonResponse(data);
+    },
+
+    // --- Filtered Search ---
+    async matomo_search_pages(args) {
+        const params = {
+            ...commonParams(args),
+            flat: 1,
+            filter_limit: args.limit || 100
+        };
+        if (args.urlPattern) {
+            params.filter_pattern = args.urlPattern;
+        }
+        const data = await callMatomoAPI('Actions.getPageUrls', params);
+        return jsonResponse(data);
+    },
+
+    async matomo_search_events(args) {
+        const method = args.dimension === 'name' ? 'Events.getName'
+            : args.dimension === 'category' ? 'Events.getCategory'
+            : 'Events.getAction';
+        const params = {
+            ...commonParams(args),
+            flat: 1,
+            filter_limit: args.limit || 100
+        };
+        if (args.filterPattern) {
+            params.filter_pattern = args.filterPattern;
+        }
+        const data = await callMatomoAPI(method, params);
+        return jsonResponse(data);
     }
 };
 
@@ -426,6 +456,45 @@ const TOOLS = [
         name: "matomo_get_campaigns",
         description: "Get all traffic sources overview including campaigns, search, social, direct",
         inputSchema: { type: "object", properties: { ...siteIdProp, ...periodDateProps, ...limitProp } }
+    },
+
+    // --- Filtered Search ---
+    {
+        name: "matomo_search_pages",
+        description: "Search page URLs with regex pattern filtering. Returns flat list of matching pages with visits, hits, time spent, bounce/exit rates. Use this to find specific pages by URL path (e.g. 'guidelines-epc', 'patent/search').",
+        inputSchema: {
+            type: "object",
+            properties: {
+                ...siteIdProp,
+                ...periodDateProps,
+                ...limitProp,
+                urlPattern: {
+                    type: "string",
+                    description: "Regex pattern to filter page URLs (e.g. 'guidelines-epc|guidelines-pct')"
+                }
+            }
+        }
+    },
+    {
+        name: "matomo_search_events",
+        description: "Search events with optional regex pattern filtering. Returns flat list of events with counts and values. Use dimension to search by action (default), category, or name.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                ...siteIdProp,
+                ...periodDateProps,
+                ...limitProp,
+                dimension: {
+                    type: "string",
+                    enum: ["action", "category", "name"],
+                    description: "Event dimension to search (default: action)"
+                },
+                filterPattern: {
+                    type: "string",
+                    description: "Regex pattern to filter events (e.g. 'click|download')"
+                }
+            }
+        }
     }
 ];
 
