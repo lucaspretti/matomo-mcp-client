@@ -24,8 +24,6 @@ jobs:
       - run: node --check matomo-mcp-client.js
       - name: Verify server starts
         run: |
-          MATOMO_HOST=https://example.com MATOMO_TOKEN_AUTH=test node matomo-mcp-client.js &
-          PID=$!
-          sleep 2
-          kill $PID 2>/dev/null || true
-          wait $PID 2>/dev/null || true
+          output=$(MATOMO_HOST=https://example.com MATOMO_TOKEN_AUTH=test timeout 5 node matomo-mcp-client.js 2>&1 || true)
+          echo "$output"
+          echo "$output" | grep -q "Matomo MCP Server ready"
