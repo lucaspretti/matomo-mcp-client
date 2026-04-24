@@ -68,3 +68,25 @@ Provide a summary with:
 - Note any trends (increasing/decreasing adoption)
 - Flag months with unusual spikes or drops
 - If usage rate is very low or very high, call it out
+
+## Fallback when segments return zero
+
+If a `device`-filtered call comes back with all-zero metrics while the same
+query without `device` returns normal numbers, the Matomo server is refusing
+to compute the segment for this API token (it lacks `process_new_segment` or
+the segment isn't pre-archived). Do not claim "no mobile traffic" — that's
+almost never the real answer.
+
+Instead:
+
+1. Tell the user the segment cannot be computed by the API token.
+2. Build a Matomo UI URL they can open in a logged-in browser session and
+   paste it:
+   ```
+   <matomo-host>/index.php?module=CoreHome&action=index
+     &idSite=<id>&period=<period>&date=<date>
+     &segment=<url-encoded segment expression>
+   ```
+   For mobile use `segment=deviceType%3D%3Dsmartphone%2CdeviceType%3D%3Dtablet%2CdeviceType%3D%3Dphablet`.
+3. Suggest asking the Matomo admin to grant `process_new_segment` on the
+   token or pre-archive device segments.

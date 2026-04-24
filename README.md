@@ -165,6 +165,35 @@ Matomo segments use `,` for OR and `;` for AND. A few useful ones:
 
 Full reference: https://developer.matomo.org/api-reference/reporting-api-segmentation
 
+### Segment archiving (important)
+
+Matomo only returns data for a segment if that segment has been **archived** by
+the server. If your API token lacks the `process_new_segment` permission and
+the segment isn't pre-archived, Matomo silently returns **zero** for every
+metric, which looks identical to "no traffic matched" but is actually
+"no permission to compute this on the fly".
+
+If you pass `segment` / `device` and get empty results while an unsegmented
+query returns data, you are almost certainly hitting this. Options:
+
+1. **Ask your Matomo admin** to either (a) grant `process_new_segment` on your
+   token, (b) enable `enable_browser_archiving_triggering` for the site, or
+   (c) pre-archive the common segments (device, country, etc.).
+2. **Fallback via the Matomo UI**: build the URL yourself and open it in a
+   browser session that is logged in to Matomo — the UI uses the logged-in
+   user's permissions, not the API token. Example:
+
+   ```
+   https://<your-matomo>/index.php?module=CoreHome&action=index
+     &idSite=35&period=range&date=2025-04-24,2026-04-24
+     &segment=deviceType%3D%3Dsmartphone%2CdeviceType%3D%3Dtablet%2CdeviceType%3D%3Dphablet
+   ```
+
+   Then navigate to Behaviour → Pages and filter by your URL pattern.
+
+The MCP server itself is not limited, it faithfully forwards the segment to
+Matomo. The restriction is entirely server-side.
+
 ## Example Queries
 
 - "Show me today's visit statistics"
