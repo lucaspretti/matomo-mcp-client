@@ -7,6 +7,8 @@ In other words: it's an **MCP server** (tools over stdio) and a **Matomo API cli
 
 - Direct connection to your Matomo instance, no remote proxy
 - 16 analytics tools: traffic, pages, search, performance, and traffic sources
+- Segment filtering on every time-based tool, including a `device` shortcut for mobile/desktop slicing
+- Custom date ranges via `period=range` + `date=YYYY-MM-DD,YYYY-MM-DD`
 - Docker ready or run with Node.js
 - Credentials stay local, never sent to third parties
 - Retry logic with exponential backoff and timeout handling
@@ -126,6 +128,43 @@ Restart your MCP client after saving the configuration.
 | `matomo_get_ai_assistants` | AI assistants: ChatGPT, Perplexity, Claude, Gemini |
 | `matomo_get_campaigns` | All traffic sources overview including campaigns |
 
+## Common Parameters
+
+Every time-based tool accepts the same scoping parameters:
+
+| Param | Type | Description |
+|---|---|---|
+| `siteId` | number | Site ID. Falls back to `MATOMO_DEFAULT_SITE_ID`. |
+| `period` | enum | `day`, `week`, `month`, `year`, or `range`. Default: `day`. |
+| `date` | string | `today`, `yesterday`, `YYYY-MM-DD`, `last7`, `last30`, or `YYYY-MM-DD,YYYY-MM-DD` when `period=range`. |
+| `limit` | number | Number of rows to return (default: 10 for most tools, 500 for `search_*`). |
+| `segment` | string | Raw Matomo segment expression, e.g. `deviceType==smartphone` or `countryCode==de;browserCode==FF`. |
+| `device` | enum | Sugar for the most common device segments. Combines with `segment` via AND. |
+
+### `device` shortcuts
+
+| Value | Expands to |
+|---|---|
+| `desktop` | `deviceType==desktop` |
+| `mobile` | `deviceType==smartphone,deviceType==tablet,deviceType==phablet` |
+| `smartphone` | `deviceType==smartphone` |
+| `tablet` | `deviceType==tablet` |
+| `phablet` | `deviceType==phablet` |
+
+`mobile` bundles smartphone + tablet + phablet because most callers mean
+"not desktop". Use `smartphone` if you need handheld only.
+
+### Segment syntax
+
+Matomo segments use `,` for OR and `;` for AND. A few useful ones:
+
+- `deviceType==smartphone,deviceType==tablet` — mobile or tablet
+- `countryCode==de;browserCode==FF` — German visitors using Firefox
+- `pageUrl=@bulletin/download` — visits that saw any URL containing `bulletin/download`
+- `visitorType==returning` — returning visitors only
+
+Full reference: https://developer.matomo.org/api-reference/reporting-api-segmentation
+
 ## Example Queries
 
 - "Show me today's visit statistics"
@@ -135,6 +174,9 @@ Restart your MCP client after saving the configuration.
 - "Show me page load performance for the last month"
 - "Which AI assistants are sending traffic?"
 - "What are the top entry pages yesterday?"
+- "How many mobile visits did `/bulletin/download` get in the last 12 months?"
+- "Top pages for German visitors only, last 30 days"
+- "Smartphone traffic share this quarter"
 
 ## Architecture
 

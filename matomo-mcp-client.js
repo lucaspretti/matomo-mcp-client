@@ -172,13 +172,38 @@ function filterResponseFields(data, fields) {
     return data;
 }
 
+// Sugar mapping device shortcuts to Matomo segment expressions.
+// `mobile` intentionally bundles smartphone + tablet + phablet since most callers
+// mean "not desktop" rather than strictly handheld.
+const DEVICE_SEGMENTS = {
+    desktop: 'deviceType==desktop',
+    mobile: 'deviceType==smartphone,deviceType==tablet,deviceType==phablet',
+    smartphone: 'deviceType==smartphone',
+    tablet: 'deviceType==tablet',
+    phablet: 'deviceType==phablet'
+};
+
+// Build a Matomo segment string from explicit `segment` + `device` sugar.
+// Segments combine with AND (`;`); values inside one segment OR with `,`.
+function resolveSegment(args) {
+    const parts = [];
+    if (args.segment) parts.push(args.segment);
+    if (args.device && DEVICE_SEGMENTS[args.device]) {
+        parts.push(DEVICE_SEGMENTS[args.device]);
+    }
+    return parts.length ? parts.join(';') : undefined;
+}
+
 // Common params extraction
 function commonParams(args) {
-    return {
+    const params = {
         idSite: args.siteId || config.defaultSiteId,
         period: args.period || 'day',
         date: args.date || 'today'
     };
+    const segment = resolveSegment(args);
+    if (segment) params.segment = segment;
+    return params;
 }
 
 // ============================================================================
@@ -365,12 +390,12 @@ const toolHandlers = {
 const periodDateProps = {
     period: {
         type: "string",
-        enum: ["day", "week", "month", "year"],
-        description: "Time period (default: day)"
+        enum: ["day", "week", "month", "year", "range"],
+        description: "Time period (default: day). Use 'range' with date=YYYY-MM-DD,YYYY-MM-DD for custom windows."
     },
     date: {
         type: "string",
-        description: "Date: today, yesterday, YYYY-MM-DD, last7, last30 (default: today)"
+        description: "Date: today, yesterday, YYYY-MM-DD, last7, last30, or YYYY-MM-DD,YYYY-MM-DD when period=range (default: today)"
     }
 };
 
@@ -388,6 +413,18 @@ const limitProp = {
     }
 };
 
+const segmentProps = {
+    segment: {
+        type: "string",
+        description: "Raw Matomo segment expression, e.g. 'deviceType==smartphone' or 'countryCode==de;browserCode==FF'. Combines with `device` sugar via AND."
+    },
+    device: {
+        type: "string",
+        enum: ["desktop", "mobile", "smartphone", "tablet", "phablet"],
+        description: "Shortcut for the most common device segments. 'mobile' covers smartphone + tablet + phablet."
+    }
+};
+
 const TOOLS = [
     // --- Discovery ---
     {
@@ -400,7 +437,7 @@ const TOOLS = [
     {
         name: "matomo_get_visits",
         description: "Get visits summary: unique visitors, total visits, actions, bounce rate, avg time on site",
-        inputSchema: { type: "object", properties: { ...siteIdProp, ...periodDateProps } }
+        inputSchema: { type: "object", properties: { ...siteIdProp, ...periodDateProps, ...segmentProps } }
     },
     {
         name: "matomo_get_live_counters",
@@ -423,89 +460,85 @@ const TOOLS = [
     {
         name: "matomo_get_top_pages",
         description: "Get most visited page URLs with hits, time spent, bounce/exit rates, and load times",
-        inputSchema: { type: "object", properties: { ...siteIdProp, ...periodDateProps, ...limitProp } }
+        inputSchema: { type: "object", properties: { ...siteIdProp, ...periodDateProps, ...limitProp, ...segmentProps } }
     },
     {
         name: "matomo_get_page_titles",
         description: "Get most visited pages by title (useful when URLs are not descriptive)",
-        inputSchema: { type: "object", properties: { ...siteIdProp, ...periodDateProps, ...limitProp } }
+        inputSchema: { type: "object", properties: { ...siteIdProp, ...periodDateProps, ...limitProp, ...segmentProps } }
     },
     {
         name: "matomo_get_entry_pages",
         description: "Get top landing pages where visitors enter the site",
-        inputSchema: { type: "object", properties: { ...siteIdProp, ...periodDateProps, ...limitProp } }
+        inputSchema: { type: "object", properties: { ...siteIdProp, ...periodDateProps, ...limitProp, ...segmentProps } }
     },
     {
         name: "matomo_get_exit_pages",
         description: "Get top exit pages where visitors leave the site",
-        inputSchema: { type: "object", properties: { ...siteIdProp, ...periodDateProps, ...limitProp } }
+        inputSchema: { type: "object", properties: { ...siteIdProp, ...periodDateProps, ...limitProp, ...segmentProps } }
     },
 
     // --- Site Search ---
     {
         name: "matomo_get_search_keywords",
         description: "Get keywords visitors searched for on the site's internal search",
-        inputSchema: { type: "object", properties: { ...siteIdProp, ...periodDateProps, ...limitProp } }
+        inputSchema: { type: "object", properties: { ...siteIdProp, ...periodDateProps, ...limitProp, ...segmentProps } }
     },
     {
         name: "matomo_get_search_no_results",
         description: "Get search keywords that returned no results (content gaps)",
-        inputSchema: { type: "object", properties: { ...siteIdProp, ...periodDateProps, ...limitProp } }
+        inputSchema: { type: "object", properties: { ...siteIdProp, ...periodDateProps, ...limitProp, ...segmentProps } }
     },
 
     // --- Performance ---
     {
         name: "matomo_get_page_performance",
         description: "Get page load performance: network, server, transfer, DOM processing, and total load times",
-        inputSchema: { type: "object", properties: { ...siteIdProp, ...periodDateProps } }
+        inputSchema: { type: "object", properties: { ...siteIdProp, ...periodDateProps, ...segmentProps } }
     },
     {
         name: "matomo_get_devices",
         description: "Get visitor device types: desktop, smartphone, tablet, etc.",
-        inputSchema: { type: "object", properties: { ...siteIdProp, ...periodDateProps, ...limitProp } }
+        inputSchema: { type: "object", properties: { ...siteIdProp, ...periodDateProps, ...limitProp, ...segmentProps } }
     },
     {
         name: "matomo_get_browsers",
         description: "Get visitor browsers: Chrome, Firefox, Safari, Edge, etc.",
-        inputSchema: { type: "object", properties: { ...siteIdProp, ...periodDateProps, ...limitProp } }
+        inputSchema: { type: "object", properties: { ...siteIdProp, ...periodDateProps, ...limitProp, ...segmentProps } }
     },
 
     // --- Traffic Sources ---
     {
         name: "matomo_get_referrers",
         description: "Get referring websites that send traffic to your site",
-        inputSchema: { type: "object", properties: { ...siteIdProp, ...periodDateProps, ...limitProp } }
+        inputSchema: { type: "object", properties: { ...siteIdProp, ...periodDateProps, ...limitProp, ...segmentProps } }
     },
     {
         name: "matomo_get_search_engines",
         description: "Get search engines driving traffic: Google, Bing, DuckDuckGo, etc.",
-        inputSchema: { type: "object", properties: { ...siteIdProp, ...periodDateProps, ...limitProp } }
+        inputSchema: { type: "object", properties: { ...siteIdProp, ...periodDateProps, ...limitProp, ...segmentProps } }
     },
     {
         name: "matomo_get_ai_assistants",
         description: "Get AI assistants driving traffic: ChatGPT, Perplexity, Claude, etc.",
-        inputSchema: { type: "object", properties: { ...siteIdProp, ...periodDateProps, ...limitProp } }
+        inputSchema: { type: "object", properties: { ...siteIdProp, ...periodDateProps, ...limitProp, ...segmentProps } }
     },
     {
         name: "matomo_get_campaigns",
         description: "Get all traffic sources overview including campaigns, search, social, direct",
-        inputSchema: { type: "object", properties: { ...siteIdProp, ...periodDateProps, ...limitProp } }
+        inputSchema: { type: "object", properties: { ...siteIdProp, ...periodDateProps, ...limitProp, ...segmentProps } }
     },
 
     // --- Filtered Search ---
     {
         name: "matomo_search_pages",
-        description: "Search page URLs with regex pattern filtering. Returns flat list of matching pages with visits, hits, time spent, bounce/exit rates. Use this to find specific pages by URL path (e.g. 'guidelines-epc', 'patent/search').",
+        description: "Search page URLs with regex pattern filtering. Returns flat list of matching pages with visits, hits, time spent, bounce/exit rates. Use this to find specific pages by URL path (e.g. 'guidelines-epc', 'patent/search'). Supports `segment` and `device` for slicing (e.g. device='mobile').",
         inputSchema: {
             type: "object",
             properties: {
                 ...siteIdProp,
                 ...periodDateProps,
-                period: {
-                    type: "string",
-                    enum: ["day", "week", "month", "year", "range"],
-                    description: "Time period. Use 'range' with date=YYYY-MM-DD,YYYY-MM-DD (default: day)"
-                },
+                ...segmentProps,
                 limit: {
                     type: "number",
                     description: "Number of results to return (default: 500)"
@@ -519,17 +552,13 @@ const TOOLS = [
     },
     {
         name: "matomo_search_events",
-        description: "Search events with optional regex pattern filtering. Returns flat list of events with counts and values. Use dimension to search by action (default), category, or name.",
+        description: "Search events with optional regex pattern filtering. Returns flat list of events with counts and values. Use dimension to search by action (default), category, or name. Supports `segment` and `device` for slicing.",
         inputSchema: {
             type: "object",
             properties: {
                 ...siteIdProp,
                 ...periodDateProps,
-                period: {
-                    type: "string",
-                    enum: ["day", "week", "month", "year", "range"],
-                    description: "Time period. Use 'range' with date=YYYY-MM-DD,YYYY-MM-DD (default: day)"
-                },
+                ...segmentProps,
                 limit: {
                     type: "number",
                     description: "Number of results to return (default: 500)"
