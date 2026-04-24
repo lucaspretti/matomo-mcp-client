@@ -167,19 +167,42 @@ Full reference: https://developer.matomo.org/api-reference/reporting-api-segment
 
 ### Segment archiving (important)
 
-Matomo only returns data for a segment if that segment has been **archived** by
-the server. If your API token lacks the `process_new_segment` permission and
-the segment isn't pre-archived, Matomo silently returns **zero** for every
-metric, which looks identical to "no traffic matched" but is actually
-"no permission to compute this on the fly".
+Matomo only returns aggregated metrics for a segment that has been **archived**
+by the server. If your API token lacks the `process_new_segment` permission
+and the segment isn't pre-archived, every reporting endpoint
+(`VisitsSummary.get`, `Actions.getPageUrls`, etc.) silently returns **zero**
+for every metric. This looks identical to "no traffic matched" but is
+actually "the server refused to compute this on the fly".
 
 If you pass `segment` / `device` and get empty results while an unsegmented
-query returns data, you are almost certainly hitting this. Options:
+query returns data, you are hitting this. You have three options, in order of
+effort:
 
-1. **Ask your Matomo admin** to either (a) grant `process_new_segment` on your
+1. **Use `Live.getLastVisitsDetails` instead** — the live API serves raw
+   per-visit data and **does not require archiving**, so arbitrary segments
+   work immediately. The downside: you get a list of visits, not a
+   pre-aggregated number, so you need to count client-side. A dedicated
+   `matomo_count_visits_by_segment` tool is planned for v1.7.5
+   (see `ROADMAP.md`). Until then, call Matomo directly:
+
+   ```bash
+   curl -s -X POST "$MATOMO_HOST/index.php" \
+     --data-urlencode "module=API" \
+     --data-urlencode "method=Live.getLastVisitsDetails" \
+     --data-urlencode "idSite=35" \
+     --data-urlencode "period=month" --data-urlencode "date=2026-03-01" \
+     --data-urlencode "segment=pageUrl=@bulletin/download;deviceType==smartphone,deviceType==tablet,deviceType==phablet" \
+     --data-urlencode "filter_limit=-1" \
+     --data-urlencode "format=JSON" \
+     --data-urlencode "token_auth=$MATOMO_TOKEN_AUTH" \
+     | jq 'length'
+   ```
+
+2. **Ask your Matomo admin** to either (a) grant `process_new_segment` on your
    token, (b) enable `enable_browser_archiving_triggering` for the site, or
-   (c) pre-archive the common segments (device, country, etc.).
-2. **Fallback via the Matomo UI**: build the URL yourself and open it in a
+   (c) pre-archive the common segments (device, country, etc.). This is the
+   right fix if you rely heavily on segmented reporting.
+3. **Fallback via the Matomo UI**: build the URL yourself and open it in a
    browser session that is logged in to Matomo — the UI uses the logged-in
    user's permissions, not the API token. Example:
 
@@ -192,7 +215,8 @@ query returns data, you are almost certainly hitting this. Options:
    Then navigate to Behaviour → Pages and filter by your URL pattern.
 
 The MCP server itself is not limited, it faithfully forwards the segment to
-Matomo. The restriction is entirely server-side.
+Matomo. The restriction is entirely server-side and only affects the
+aggregated reporting endpoints, not the Live API.
 
 ## Example Queries
 

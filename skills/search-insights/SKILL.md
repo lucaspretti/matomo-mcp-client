@@ -31,20 +31,36 @@ If the user asks about mobile-only search behavior, pass `device: "mobile"` to b
 
 If a `device`-filtered call comes back with all-zero metrics while the same
 query without `device` returns normal numbers, the Matomo server is refusing
-to compute the segment for this API token (it lacks `process_new_segment` or
-the segment isn't pre-archived). Do not claim "no mobile traffic" — that's
+to aggregate the segment for this API token (it lacks `process_new_segment`
+or the segment isn't pre-archived). Do not claim "no mobile traffic" — that's
 almost never the real answer.
 
-Instead:
+Try these in order:
 
-1. Tell the user the segment cannot be computed by the API token.
-2. Build a Matomo UI URL they can open in a logged-in browser session and
-   paste it:
+1. **Fall back to the Live API.** `Live.getLastVisitsDetails` serves raw
+   per-visit data and does NOT need segment archiving. Call it directly if
+   you can reach a shell:
+   ```bash
+   curl -s -X POST "$MATOMO_HOST/index.php" \
+     --data-urlencode "module=API" \
+     --data-urlencode "method=Live.getLastVisitsDetails" \
+     --data-urlencode "idSite=<id>" \
+     --data-urlencode "period=<period>" --data-urlencode "date=<date>" \
+     --data-urlencode "segment=deviceType==smartphone,deviceType==tablet,deviceType==phablet" \
+     --data-urlencode "filter_limit=-1" \
+     --data-urlencode "doNotFetchActions=1" \
+     --data-urlencode "format=JSON" \
+     --data-urlencode "token_auth=$MATOMO_TOKEN_AUTH" | jq 'length'
+   ```
+   The length of the returned array equals the visit count. For URL filters,
+   drop `doNotFetchActions=1` and grep `actionDetails[].url` client-side.
+   A dedicated MCP tool for this is planned (v1.7.5, see ROADMAP.md).
+2. **Build a Matomo UI URL** the user can open in a logged-in browser
+   session (the UI uses the user's permissions, not the token):
    ```
    <matomo-host>/index.php?module=CoreHome&action=index
      &idSite=<id>&period=<period>&date=<date>
-     &segment=<url-encoded segment expression>
+     &segment=deviceType%3D%3Dsmartphone%2CdeviceType%3D%3Dtablet%2CdeviceType%3D%3Dphablet
    ```
-   For mobile use `segment=deviceType%3D%3Dsmartphone%2CdeviceType%3D%3Dtablet%2CdeviceType%3D%3Dphablet`.
-3. Suggest asking the Matomo admin to grant `process_new_segment` on the
-   token or pre-archive device segments.
+3. **Longer-term fix:** ask the Matomo admin to grant `process_new_segment`
+   on the token or pre-archive the common segments.

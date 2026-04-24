@@ -35,6 +35,33 @@ matomo_search_pages({
 
 ---
 
+## v1.7.5 — Live-API segment workaround
+
+**Goal:** bypass the "segment silently returns zero" trap. Matomo only serves
+aggregated metrics for pre-archived segments, but `Live.getLastVisitsDetails`
+returns raw per-visit data regardless of archive state, and accepts arbitrary
+segments. Today our wrapper exposes `matomo_get_last_visits` with no
+period/date/segment controls, so callers can't use this escape hatch.
+
+- [ ] Expand `matomo_get_last_visits` with `period`, `date`, `segment`, and
+      `device` (same params as the other time-based tools)
+- [ ] Add a new `matomo_count_visits_by_segment` tool that:
+      - calls `Live.getLastVisitsDetails` with `filter_limit=-1`,
+        `doNotFetchActions=1`
+      - returns the visit count + per-device sub-split
+      - optionally accepts a `urlPattern` to post-filter `actionDetails`
+      - warns when the result set would be very large (> 10k visits)
+- [ ] Document in the README and all skills that this is the right tool when
+      the user asks for mobile/desktop breakdowns on a specific URL and the
+      standard segment route returns zero
+- [ ] Update the "Fallback when segments return zero" section in the skills to
+      try this tool BEFORE suggesting the browser URL
+
+**Motivating example:** "how many mobile visits did `/bulletin/download` get
+in the last 12 months" — solvable without admin intervention.
+
+---
+
 ## v1.8 — File split & module boundaries
 
 **Goal:** the 628-line monolith is readable today but every new tool or
