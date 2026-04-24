@@ -21,10 +21,13 @@ If $ARGUMENTS contains a site ID or name, use that. If the conversation already 
 
 4. **Check browser impact** using `matomo_get_browsers` to see if specific browsers are slower.
 
-5. **Present findings** as a summary:
+5. **Mobile-specific drill-down** when the user mentions "mobile", "phone", or "slow on phone": rerun steps 1 and 2 with `device: "mobile"` to get the mobile-only numbers, then compare against the all-devices baseline. Flag any page where mobile is significantly slower than desktop.
+
+6. **Present findings** as a summary:
    - Overall avg load time and breakdown (network, server, DOM processing, DOM completion)
    - Top 5 slowest pages with their load times
    - Device/browser breakdown if significant differences exist
+   - Mobile vs desktop delta if a mobile drill-down was run
    - Identify the bottleneck: is it network, server, or client-side (DOM)?
 
 If $ARGUMENTS contains a specific URL or page path, focus the analysis on that page.

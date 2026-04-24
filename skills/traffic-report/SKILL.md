@@ -23,11 +23,14 @@ If $ARGUMENTS contains a site ID or name, use that. If the conversation already 
 
 5. **Traffic sources** using `matomo_get_search_engines` and `matomo_get_ai_assistants` with limit 5 each
 
-6. **Present as a report** with sections:
+6. **Device segment** using `matomo_get_devices` for the same period to show the desktop vs mobile split. If the user asked for a mobile-only report, pass `device: "mobile"` to steps 1, 3, 4 instead and note that the whole report is scoped to smartphone+tablet+phablet.
+
+7. **Present as a report** with sections:
    - Key metrics: visits, unique visitors, actions, bounce rate, avg time on site
    - Currently online (live counters)
    - Top pages (table: page, visits, avg time, bounce rate)
    - Where visitors come from (search engines, AI assistants)
    - Top landing pages
+   - Device split (desktop vs mobile share)
 
 Keep the report concise and highlight anything unusual (high bounce rates, traffic spikes, etc.).

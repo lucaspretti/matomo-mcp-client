@@ -15,27 +15,28 @@ Ask the user for (or infer from context):
 2. **URL pattern** - regex to filter pages (e.g. `guidelines-epc|guidelines-pct`)
 3. **Event filter** - the event name or action to cross-reference (e.g. `Toggle Show Modifications`)
 4. **Date range** - start and end dates (default: last 30 days from today)
+5. **Device filter** (optional) - `desktop`, `mobile`, `smartphone`, `tablet`, or `phablet` if the user asks about a specific device slice (e.g. "how many mobile users toggled X")
 
 ## Execution Steps
 
 ### 1. Fetch page views
 
 Call `matomo_search_pages` with:
-- `idSite`: the site ID
-- `pattern`: the URL pattern
-- `date`: comma-separated start,end range (e.g. `2026-02-01,2026-02-28`)
-- `period`: use `month` for ranges over 30 days, `day` for shorter ranges
+- `siteId`: the site ID
+- `urlPattern`: the URL pattern
+- `period`: `range` when the user gave start/end dates, otherwise `month` for long windows and `day` for short ones
+- `date`: comma-separated start,end range when `period=range` (e.g. `2026-02-01,2026-02-28`)
+- `device`: pass through if the user asked for a device slice
 
 Sum up `nb_visits` (unique visitors) and `nb_hits` (page views) across all matching pages. Keep monthly totals if the range spans multiple months.
 
 ### 2. Fetch event counts
 
 Call `matomo_search_events` with:
-- `idSite`: the site ID
-- `pattern`: the event filter
+- `siteId`: the site ID
+- `filterPattern`: the event filter
 - `dimension`: `name` (to see specific event values like on/off toggles)
-- `date`: same range as above
-- `period`: same as above
+- `period`, `date`, `device`: same as above
 
 Sum up `nb_events` across all matching events. Keep monthly totals.
 

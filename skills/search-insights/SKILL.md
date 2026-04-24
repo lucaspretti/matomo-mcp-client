@@ -24,3 +24,5 @@ If $ARGUMENTS contains a site ID or name, use that. If the conversation already 
    - Recommendations: which content should be created or made more discoverable
 
 If $ARGUMENTS contains a specific keyword, focus analysis around that topic.
+
+If the user asks about mobile-only search behavior, pass `device: "mobile"` to both calls above to scope the analysis to smartphone+tablet+phablet traffic.
