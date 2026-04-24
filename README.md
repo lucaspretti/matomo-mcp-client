@@ -6,9 +6,12 @@ An MCP (Model Context Protocol) server that acts as a client to the Matomo Analy
 In other words: it's an **MCP server** (tools over stdio) and a **Matomo API client** (HTTP requests) in one.
 
 - Direct connection to your Matomo instance, no remote proxy
-- 16 analytics tools: traffic, pages, search, performance, and traffic sources
+- 23 analytics tools: traffic, pages, search, performance, traffic sources, bulk batching, row evolution, segment discovery, and Live-API-backed counting
 - Segment filtering on every time-based tool, including a `device` shortcut for mobile/desktop slicing
+- `matomo_count_visits_by_segment` bypasses the segment-archiving trap (works even when the API token lacks `process_new_segment`)
+- `matomo_batch` runs multiple reports in a single HTTP round-trip
 - Custom date ranges via `period=range` + `date=YYYY-MM-DD,YYYY-MM-DD`
+- Server-side response shaping: `hideColumns`, `showColumns`, `filter_truncate`, `filter_offset`, `format_metrics`
 - Docker ready or run with Node.js
 - Credentials stay local, never sent to third parties
 - Retry logic with exponential backoff and timeout handling
@@ -127,6 +130,14 @@ Restart your MCP client after saving the configuration.
 | `matomo_get_search_engines` | Search engines: Google, Bing, DuckDuckGo |
 | `matomo_get_ai_assistants` | AI assistants: ChatGPT, Perplexity, Claude, Gemini |
 | `matomo_get_campaigns` | All traffic sources overview including campaigns |
+
+### Segment-aware & batching (v1.7.5–1.7.8)
+| Tool | Description |
+|---|---|
+| `matomo_count_visits_by_segment` | Count visits matching any segment via the Live API, bypassing segment archiving. Returns `{visits, byDevice, byCountryTop10}`. Use when aggregate endpoints return zero. |
+| `matomo_list_segments` | List pre-defined (saved) segments. Those with `auto_archive=1` are always safe to query; ad-hoc segments may silently return 0 on locked-down tokens. |
+| `matomo_batch` | Run multiple API methods in one HTTP round-trip via `API.getBulkRequest`. Great for multi-panel reports. |
+| `matomo_get_row_evolution` | Time-series of a specific row label across periods (e.g. daily visits for one URL over 30 days). |
 
 ## Common Parameters
 

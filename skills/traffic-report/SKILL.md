@@ -45,30 +45,19 @@ almost never the real answer.
 
 Try these in order:
 
-1. **Fall back to the Live API.** `Live.getLastVisitsDetails` serves raw
-   per-visit data and does NOT need segment archiving. Call it directly if
-   you can reach a shell:
-   ```bash
-   curl -s -X POST "$MATOMO_HOST/index.php" \
-     --data-urlencode "module=API" \
-     --data-urlencode "method=Live.getLastVisitsDetails" \
-     --data-urlencode "idSite=<id>" \
-     --data-urlencode "period=<period>" --data-urlencode "date=<date>" \
-     --data-urlencode "segment=deviceType==smartphone,deviceType==tablet,deviceType==phablet" \
-     --data-urlencode "filter_limit=-1" \
-     --data-urlencode "doNotFetchActions=1" \
-     --data-urlencode "format=JSON" \
-     --data-urlencode "token_auth=$MATOMO_TOKEN_AUTH" | jq 'length'
-   ```
-   The length of the returned array equals the visit count. For URL filters,
-   drop `doNotFetchActions=1` and grep `actionDetails[].url` client-side.
-   A dedicated MCP tool for this is planned (v1.7.5, see ROADMAP.md).
-2. **Build a Matomo UI URL** the user can open in a logged-in browser
-   session (the UI uses the user's permissions, not the token):
+1. **Switch to `matomo_count_visits_by_segment`.** It uses the Live API
+   under the hood and does NOT need segment archiving. For mobile:
+   `{siteId, period, date, device: "mobile"}` returns
+   `{visits, byDevice, byCountryTop10}`.
+2. **Check `matomo_list_segments`** to find saved segments on the instance.
+   Any segment with `auto_archive=1` is pre-archived and will always return
+   real numbers when you reference its `definition` string in `segment`.
+3. **Open the Matomo UI in a logged-in browser session** as a last resort
+   — the UI uses the user's permissions, not the token:
    ```
    <matomo-host>/index.php?module=CoreHome&action=index
      &idSite=<id>&period=<period>&date=<date>
      &segment=deviceType%3D%3Dsmartphone%2CdeviceType%3D%3Dtablet%2CdeviceType%3D%3Dphablet
    ```
-3. **Longer-term fix:** ask the Matomo admin to grant `process_new_segment`
-   on the token or pre-archive the common segments.
+4. **Longer-term fix**: ask the Matomo admin to grant
+   `process_new_segment` on the token or pre-archive common segments.

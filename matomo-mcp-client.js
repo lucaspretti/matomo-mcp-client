@@ -203,6 +203,12 @@ function commonParams(args) {
     };
     const segment = resolveSegment(args);
     if (segment) params.segment = segment;
+    // Server-side response shaping (passthrough)
+    if (args.hideColumns) params.hideColumns = args.hideColumns;
+    if (args.showColumns) params.showColumns = args.showColumns;
+    if (args.filter_offset !== undefined) params.filter_offset = args.filter_offset;
+    if (args.filter_truncate !== undefined) params.filter_truncate = args.filter_truncate;
+    if (args.format_metrics === false) params.format_metrics = 0;
     return params;
 }
 
@@ -232,10 +238,126 @@ const toolHandlers = {
     },
 
     async matomo_get_last_visits(args) {
-        const data = await callMatomoAPI('Live.getLastVisitsDetails', {
+        // Live.getLastVisitsDetails: accepts period/date/segment. When none are
+        // provided, returns the most recent N visits (the original behaviour).
+        const params = { idSite: args.siteId || config.defaultSiteId };
+        if (args.period) params.period = args.period;
+        if (args.date) params.date = args.date;
+        const seg = resolveSegment(args);
+        if (seg) params.segment = seg;
+        params.filter_limit = args.limit || 10;
+        if (args.filter_offset !== undefined) params.filter_offset = args.filter_offset;
+        if (args.doNotFetchActions) params.doNotFetchActions = 1;
+        const data = await callMatomoAPI('Live.getLastVisitsDetails', params);
+        return jsonResponse(data);
+    },
+
+    // Count visits via Live API. Bypasses the "segment not archived" trap
+    // because Live.getLastVisitsDetails reads raw per-visit data that does not
+    // depend on pre-computed segment archives. Optionally filters client-side
+    // by a URL regex, then returns an aggregate (total + device + country).
+    async matomo_count_visits_by_segment(args) {
+        const params = {
             idSite: args.siteId || config.defaultSiteId,
-            filter_limit: args.limit || 10
+            period: args.period || 'month',
+            date: args.date || 'last30',
+            filter_limit: -1
+        };
+        const seg = resolveSegment(args);
+        if (seg) params.segment = seg;
+        // doNotFetchActions halves payload + latency. We only need actions
+        // when the caller wants to post-filter by URL pattern.
+        if (!args.urlPattern) params.doNotFetchActions = 1;
+        const visits = await callMatomoAPI('Live.getLastVisitsDetails', params);
+        if (!Array.isArray(visits)) {
+            return jsonResponse({ error: 'Unexpected response', data: visits });
+        }
+
+        const byDevice = {};
+        const byCountry = {};
+        const urlRegex = args.urlPattern ? new RegExp(args.urlPattern) : null;
+        let matched = 0;
+        let actionHits = 0;
+        for (const v of visits) {
+            if (urlRegex) {
+                const hits = (v.actionDetails || []).filter(
+                    a => a && a.url && urlRegex.test(a.url)
+                );
+                if (hits.length === 0) continue;
+                actionHits += hits.length;
+            }
+            matched++;
+            const dt = v.deviceType || 'unknown';
+            byDevice[dt] = (byDevice[dt] || 0) + 1;
+            const cc = v.countryCode || 'unknown';
+            byCountry[cc] = (byCountry[cc] || 0) + 1;
+        }
+        const sortedCountry = Object.fromEntries(
+            Object.entries(byCountry).sort((a, b) => b[1] - a[1]).slice(0, 10)
+        );
+        return jsonResponse({
+            visits: matched,
+            byDevice,
+            byCountryTop10: sortedCountry,
+            ...(urlRegex ? { actionHitsOnPattern: actionHits, rawVisitsInSegment: visits.length } : {}),
+            note: 'Counted client-side from Live.getLastVisitsDetails. No segment archiving required.'
         });
+    },
+
+    // Bulk request: one HTTP call bundling multiple API methods. Saves N-1
+    // round-trips when a skill needs several reports (traffic-report etc.).
+    // `calls` is an array of {method, params?}. Returns an array of results
+    // in the same order.
+    async matomo_batch(args) {
+        if (!Array.isArray(args.calls) || args.calls.length === 0) {
+            throw new Error('matomo_batch requires a non-empty `calls` array');
+        }
+        const subParams = {};
+        args.calls.forEach((call, i) => {
+            if (!call || !call.method) {
+                throw new Error(`calls[${i}].method is required`);
+            }
+            const sub = new URLSearchParams({
+                method: call.method,
+                ...(call.params || {})
+            });
+            subParams[`urls[${i}]`] = sub.toString();
+        });
+        const data = await callMatomoAPI('API.getBulkRequest', subParams);
+        return jsonResponse(data);
+    },
+
+    // Time-series for a specific row label (e.g. daily visits for one URL
+    // over 30 days). Wraps API.getRowEvolution. apiModule/apiAction pick
+    // which report to evolve, label is the row's label in that report.
+    async matomo_get_row_evolution(args) {
+        if (!args.apiModule || !args.apiAction || !args.label) {
+            throw new Error('apiModule, apiAction and label are required');
+        }
+        const params = {
+            idSite: args.siteId || config.defaultSiteId,
+            period: args.period || 'day',
+            date: args.date || 'last30',
+            apiModule: args.apiModule,
+            apiAction: args.apiAction,
+            label: args.label
+        };
+        const seg = resolveSegment(args);
+        if (seg) params.segment = seg;
+        if (args.idSubtable !== undefined) params.idSubtable = args.idSubtable;
+        if (args.column) params.column = args.column;
+        const data = await callMatomoAPI('API.getRowEvolution', params);
+        return jsonResponse(data);
+    },
+
+    // Lists pre-defined segments the Matomo instance knows about. Critical
+    // for picking segments that will actually return data: segments with
+    // auto_archive=1 work regardless of process_new_segment permission; ad-hoc
+    // segment strings do NOT on locked-down tokens.
+    async matomo_list_segments(args) {
+        const params = {};
+        if (args.siteId) params.idSite = args.siteId;
+        const data = await callMatomoAPI('SegmentEditor.getAll', params);
         return jsonResponse(data);
     },
 
@@ -425,6 +547,32 @@ const segmentProps = {
     }
 };
 
+// Server-side response shaping. Applied before bytes leave Matomo, so they
+// reduce bandwidth and parsing cost on the MCP side. Honoured on every
+// time-based tool.
+const shapingProps = {
+    hideColumns: {
+        type: "string",
+        description: "Comma-separated list of column names to exclude from the response. Server-side. Example: 'nb_hits,avg_time_on_page'."
+    },
+    showColumns: {
+        type: "string",
+        description: "Comma-separated list of column names to keep (all others dropped). Server-side."
+    },
+    filter_offset: {
+        type: "number",
+        description: "Row offset for pagination. Use with `limit` to page past the first N rows."
+    },
+    filter_truncate: {
+        type: "number",
+        description: "Truncate the report after N rows, merging the tail into an 'Others' summary row. Useful for long-tail reports."
+    },
+    format_metrics: {
+        type: "boolean",
+        description: "Default true: metrics come pre-formatted (e.g. '56%'). Set false to get raw numbers (0.56) for easier processing."
+    }
+};
+
 const TOOLS = [
     // --- Discovery ---
     {
@@ -437,7 +585,7 @@ const TOOLS = [
     {
         name: "matomo_get_visits",
         description: "Get visits summary: unique visitors, total visits, actions, bounce rate, avg time on site",
-        inputSchema: { type: "object", properties: { ...siteIdProp, ...periodDateProps, ...segmentProps } }
+        inputSchema: { type: "object", properties: { ...siteIdProp, ...periodDateProps, ...segmentProps, ...shapingProps } }
     },
     {
         name: "matomo_get_live_counters",
@@ -452,81 +600,97 @@ const TOOLS = [
     },
     {
         name: "matomo_get_last_visits",
-        description: "Get detailed info on recent visits: pages viewed, referrer, device, location, duration",
-        inputSchema: { type: "object", properties: { ...siteIdProp, ...limitProp } }
+        description: "Get detailed info on recent visits: pages viewed, referrer, device, location, duration. Accepts period/date/segment/device for historical slices. Set doNotFetchActions=true to skip per-page details (faster, smaller).",
+        inputSchema: {
+            type: "object",
+            properties: {
+                ...siteIdProp,
+                ...periodDateProps,
+                ...limitProp,
+                ...segmentProps,
+                filter_offset: {
+                    type: "number",
+                    description: "Row offset for pagination (use with `limit` to walk large result sets)."
+                },
+                doNotFetchActions: {
+                    type: "boolean",
+                    description: "Skip fetching per-visit actionDetails (page views inside each visit). Halves response size and latency when you only need visit-level info."
+                }
+            }
+        }
     },
 
     // --- Pages ---
     {
         name: "matomo_get_top_pages",
         description: "Get most visited page URLs with hits, time spent, bounce/exit rates, and load times",
-        inputSchema: { type: "object", properties: { ...siteIdProp, ...periodDateProps, ...limitProp, ...segmentProps } }
+        inputSchema: { type: "object", properties: { ...siteIdProp, ...periodDateProps, ...limitProp, ...segmentProps, ...shapingProps } }
     },
     {
         name: "matomo_get_page_titles",
         description: "Get most visited pages by title (useful when URLs are not descriptive)",
-        inputSchema: { type: "object", properties: { ...siteIdProp, ...periodDateProps, ...limitProp, ...segmentProps } }
+        inputSchema: { type: "object", properties: { ...siteIdProp, ...periodDateProps, ...limitProp, ...segmentProps, ...shapingProps } }
     },
     {
         name: "matomo_get_entry_pages",
         description: "Get top landing pages where visitors enter the site",
-        inputSchema: { type: "object", properties: { ...siteIdProp, ...periodDateProps, ...limitProp, ...segmentProps } }
+        inputSchema: { type: "object", properties: { ...siteIdProp, ...periodDateProps, ...limitProp, ...segmentProps, ...shapingProps } }
     },
     {
         name: "matomo_get_exit_pages",
         description: "Get top exit pages where visitors leave the site",
-        inputSchema: { type: "object", properties: { ...siteIdProp, ...periodDateProps, ...limitProp, ...segmentProps } }
+        inputSchema: { type: "object", properties: { ...siteIdProp, ...periodDateProps, ...limitProp, ...segmentProps, ...shapingProps } }
     },
 
     // --- Site Search ---
     {
         name: "matomo_get_search_keywords",
         description: "Get keywords visitors searched for on the site's internal search",
-        inputSchema: { type: "object", properties: { ...siteIdProp, ...periodDateProps, ...limitProp, ...segmentProps } }
+        inputSchema: { type: "object", properties: { ...siteIdProp, ...periodDateProps, ...limitProp, ...segmentProps, ...shapingProps } }
     },
     {
         name: "matomo_get_search_no_results",
         description: "Get search keywords that returned no results (content gaps)",
-        inputSchema: { type: "object", properties: { ...siteIdProp, ...periodDateProps, ...limitProp, ...segmentProps } }
+        inputSchema: { type: "object", properties: { ...siteIdProp, ...periodDateProps, ...limitProp, ...segmentProps, ...shapingProps } }
     },
 
     // --- Performance ---
     {
         name: "matomo_get_page_performance",
         description: "Get page load performance: network, server, transfer, DOM processing, and total load times",
-        inputSchema: { type: "object", properties: { ...siteIdProp, ...periodDateProps, ...segmentProps } }
+        inputSchema: { type: "object", properties: { ...siteIdProp, ...periodDateProps, ...segmentProps, ...shapingProps } }
     },
     {
         name: "matomo_get_devices",
         description: "Get visitor device types: desktop, smartphone, tablet, etc.",
-        inputSchema: { type: "object", properties: { ...siteIdProp, ...periodDateProps, ...limitProp, ...segmentProps } }
+        inputSchema: { type: "object", properties: { ...siteIdProp, ...periodDateProps, ...limitProp, ...segmentProps, ...shapingProps } }
     },
     {
         name: "matomo_get_browsers",
         description: "Get visitor browsers: Chrome, Firefox, Safari, Edge, etc.",
-        inputSchema: { type: "object", properties: { ...siteIdProp, ...periodDateProps, ...limitProp, ...segmentProps } }
+        inputSchema: { type: "object", properties: { ...siteIdProp, ...periodDateProps, ...limitProp, ...segmentProps, ...shapingProps } }
     },
 
     // --- Traffic Sources ---
     {
         name: "matomo_get_referrers",
         description: "Get referring websites that send traffic to your site",
-        inputSchema: { type: "object", properties: { ...siteIdProp, ...periodDateProps, ...limitProp, ...segmentProps } }
+        inputSchema: { type: "object", properties: { ...siteIdProp, ...periodDateProps, ...limitProp, ...segmentProps, ...shapingProps } }
     },
     {
         name: "matomo_get_search_engines",
         description: "Get search engines driving traffic: Google, Bing, DuckDuckGo, etc.",
-        inputSchema: { type: "object", properties: { ...siteIdProp, ...periodDateProps, ...limitProp, ...segmentProps } }
+        inputSchema: { type: "object", properties: { ...siteIdProp, ...periodDateProps, ...limitProp, ...segmentProps, ...shapingProps } }
     },
     {
         name: "matomo_get_ai_assistants",
         description: "Get AI assistants driving traffic: ChatGPT, Perplexity, Claude, etc.",
-        inputSchema: { type: "object", properties: { ...siteIdProp, ...periodDateProps, ...limitProp, ...segmentProps } }
+        inputSchema: { type: "object", properties: { ...siteIdProp, ...periodDateProps, ...limitProp, ...segmentProps, ...shapingProps } }
     },
     {
         name: "matomo_get_campaigns",
         description: "Get all traffic sources overview including campaigns, search, social, direct",
-        inputSchema: { type: "object", properties: { ...siteIdProp, ...periodDateProps, ...limitProp, ...segmentProps } }
+        inputSchema: { type: "object", properties: { ...siteIdProp, ...periodDateProps, ...limitProp, ...segmentProps, ...shapingProps } }
     },
 
     // --- Filtered Search ---
@@ -538,7 +702,7 @@ const TOOLS = [
             properties: {
                 ...siteIdProp,
                 ...periodDateProps,
-                ...segmentProps,
+                ...segmentProps, ...shapingProps,
                 limit: {
                     type: "number",
                     description: "Number of results to return (default: 500)"
@@ -558,7 +722,7 @@ const TOOLS = [
             properties: {
                 ...siteIdProp,
                 ...periodDateProps,
-                ...segmentProps,
+                ...segmentProps, ...shapingProps,
                 limit: {
                     type: "number",
                     description: "Number of results to return (default: 500)"
@@ -572,6 +736,95 @@ const TOOLS = [
                     type: "string",
                     description: "Regex pattern to filter events (e.g. 'click|download')"
                 }
+            }
+        }
+    },
+
+    // --- Segment-aware counting (Live API, bypasses archiving) ---
+    {
+        name: "matomo_count_visits_by_segment",
+        description: "Count visits matching a segment (incl. device filters) without needing segment archiving. Uses Live.getLastVisitsDetails under the hood, so it works even when the API token lacks `process_new_segment`. Returns {visits, byDevice, byCountryTop10}. Pass `urlPattern` to count only visits that saw a URL matching the regex. Slower than aggregate endpoints for large result sets, but always returns real numbers.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                ...siteIdProp,
+                ...periodDateProps,
+                ...segmentProps,
+                urlPattern: {
+                    type: "string",
+                    description: "Optional regex applied client-side to actionDetails[].url. Filters visits that didn't see any matching page."
+                }
+            }
+        }
+    },
+
+    // --- Bulk batching ---
+    {
+        name: "matomo_batch",
+        description: "Execute multiple Matomo API methods in one HTTP request via API.getBulkRequest. Great for generating multi-panel reports (e.g. traffic-report needs 6+ tools — batch them). Returns an array of results in the same order as the input `calls`.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                calls: {
+                    type: "array",
+                    description: "Array of {method, params} objects. Each `method` is a Matomo API method name (e.g. 'VisitsSummary.get'). Params follow the same shape that method expects (idSite, period, date, segment, etc.).",
+                    items: {
+                        type: "object",
+                        properties: {
+                            method: { type: "string" },
+                            params: { type: "object" }
+                        },
+                        required: ["method"]
+                    }
+                }
+            },
+            required: ["calls"]
+        }
+    },
+
+    // --- Row evolution (time series of a single row) ---
+    {
+        name: "matomo_get_row_evolution",
+        description: "Get the time series of a specific row in a report (e.g. daily visits for one URL over 30 days). Pick which report to evolve via apiModule+apiAction (e.g. 'Actions'+'getPageUrls') and the row via `label`. Supports segment/device.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                ...siteIdProp,
+                ...periodDateProps,
+                ...segmentProps,
+                apiModule: {
+                    type: "string",
+                    description: "Report module, e.g. 'Actions', 'Referrers', 'UserCountry'."
+                },
+                apiAction: {
+                    type: "string",
+                    description: "Report method, e.g. 'getPageUrls', 'getWebsites', 'getCountry'."
+                },
+                label: {
+                    type: "string",
+                    description: "Row label to track. For pages, this is the URL path; for countries, the country code; etc."
+                },
+                idSubtable: {
+                    type: "number",
+                    description: "Subtable ID if the row is inside a nested report."
+                },
+                column: {
+                    type: "string",
+                    description: "Restrict the evolution to a single metric column, e.g. 'nb_visits'."
+                }
+            },
+            required: ["apiModule", "apiAction", "label"]
+        }
+    },
+
+    // --- Segment discovery ---
+    {
+        name: "matomo_list_segments",
+        description: "List the pre-defined (saved) segments the Matomo instance knows about. Segments with auto_archive=1 are pre-archived and always return data — any other ad-hoc segment may silently return zero on tokens without `process_new_segment`. Use this first when the user asks for segment-based slicing to pick a segment that will work.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                ...siteIdProp
             }
         }
     }
