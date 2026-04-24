@@ -62,6 +62,76 @@ in the last 12 months" — solvable without admin intervention.
 
 ---
 
+## v1.7.6 — Bulk request batching
+
+**Goal:** today every "report" skill (traffic-report makes 6+ sequential calls,
+performance-diagnostic makes 4+) pays N round-trips to Matomo. The API has a
+first-class batching endpoint we're not using.
+
+`API.getBulkRequest` accepts an array of URL-encoded method calls via the
+`urls[0]`, `urls[1]`, ... parameters and returns an array of results in the
+same order. Single HTTP request, same token, same segment — works with POST
+to avoid URI length limits.
+
+- [ ] Add a thin `matomo_batch` tool that accepts an array of
+      `{method, args}` and wraps `API.getBulkRequest`
+- [ ] Internally rewrite hot-path tools to call `callMatomoAPI` via the
+      batch path when the skill pre-declares its calls (optional; explicit
+      opt-in keeps per-tool semantics simple)
+- [ ] Skills: rewrite `traffic-report` to issue one batch for steps 1–6,
+      instead of one call per step. Document latency improvement (should be
+      ~5-10x faster for reports on slow Matomo instances)
+
+Docs: https://developer.matomo.org/api-reference/reporting-api (Bulk Requests)
+
+---
+
+## v1.7.7 — Response shaping & row evolution
+
+**Goal:** close gaps found while reviewing the Matomo Reporting API docs.
+
+Matomo has several built-in response-shaping params we ignore today, plus a
+whole API method for time-series that we don't expose:
+
+- [ ] Pass `hideColumns` / `showColumns` through on every tool (CSV of column
+      names). Today `filterResponseFields` does this client-side AFTER the
+      full payload has been transferred — server-side would cut bandwidth.
+- [ ] Expose `filter_truncate` (merges tail rows into an "Others" summary row)
+      — useful for long-tail reports like referrers or pages
+- [ ] Expose `filter_offset` for paginating past `filter_limit`
+- [ ] Add `format_metrics=0` opt-in for callers who want raw numbers
+      (e.g. `0.56` instead of `"56%"`) — easier to crunch in Python/JS
+- [ ] New tool `matomo_get_row_evolution` wrapping `API.getRowEvolution`
+      for time-series of a specific row label (e.g. daily visits for one
+      specific URL over N days). Signature:
+      `{siteId, apiModule, apiAction, label, period, date, ...segment}`
+
+Docs:
+- https://developer.matomo.org/api-reference/reporting-api (Optional params)
+- https://developer.matomo.org/api-reference/reporting-api-apiModule_apiAction-combinations (getRowEvolution)
+
+---
+
+## v1.7.8 — Segment discovery
+
+**Goal:** when segment-based calls return zero, the user has no way to tell
+which segments ARE pre-archived on the server (and therefore work) vs which
+are ad-hoc (and silently return empty).
+
+- [ ] New tool `matomo_list_segments` wrapping `SegmentEditor.getAll`, with
+      optional `idSite` filter. Returns `{idsegment, name, definition, hash,
+      auto_archive, enable_all_users}`.
+- [ ] Document in the README that users can hit pre-archived segments by
+      referencing their `definition` string directly — those always work
+      regardless of `process_new_segment` permission.
+- [ ] Wire into the "Fallback when segments return zero" section in the
+      skills: add "call matomo_list_segments first to find pre-archived
+      segments near your query" as option zero.
+
+Docs: https://developer.matomo.org/api-reference/reporting-api-metadata
+
+---
+
 ## v1.8 — File split & module boundaries
 
 **Goal:** the 628-line monolith is readable today but every new tool or
