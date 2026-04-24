@@ -71,6 +71,40 @@ returned 2 039 visits with 87% Smartphone / 8% Tablet / 4% Phablet split.
 
 ---
 
+## v1.7.9 — Auto-chunking for large Live-API queries
+
+**Goal:** `matomo_count_visits_by_segment` hits the 30 s HTTP timeout when the
+window has more than ~30 k visits matching the segment. Today the caller has
+to chunk by hand (e.g. 5 weekly calls to cover a month on epo.org mobile).
+The tool should estimate the volume upfront and auto-chunk.
+
+Observed limits (Matomo EPO, site 35, segment `device=mobile`):
+- 1 week ≈ 9–15 k visits → completes in ~10–30 s (edge of timeout)
+- 1 month ≈ 40 k visits → times out
+- 12 months ≈ 500 k visits → times out by orders of magnitude
+
+- [ ] Before the main call, probe via `VisitsSummary.get` (aggregated,
+      cheap, ≤ 1 s) to estimate `nb_visits`. Apply the same segment.
+      Note: if archiving is locked down this probe may return 0 — in that
+      case, fall back to "assume large" and chunk conservatively.
+- [ ] If estimate > chunkThreshold (default 10 000, configurable via arg):
+      - split the `date` range into sub-periods (week by default, day if
+        one week still exceeds threshold)
+      - issue each sub-call, aggregate `visits`, merge `byDevice`, union
+        `byCountryTop10` by summed counts
+- [ ] Preserve the original response shape so callers don't need to know
+      chunking happened; expose `chunked: true, chunks: N` as metadata.
+- [ ] Add `maxChunks` safety cap (default 15) to prevent runaway fan-out
+      on misconfigured queries.
+
+Stretch:
+- [ ] Use `matomo_batch` to fire all sub-period calls in one HTTP request
+      once the Matomo instance supports Live API through `getBulkRequest`
+      (needs verification — bulk-request docs don't guarantee Live methods
+      behave identically inside a batch).
+
+---
+
 ## v1.7.8 — Segment discovery ✅
 
 - [x] `matomo_list_segments` tool wrapping `SegmentEditor.getAll`. Returns
