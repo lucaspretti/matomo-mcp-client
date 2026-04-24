@@ -1,6 +1,6 @@
 {
   "name": "matomo-analytics",
-  "version": "1.8.0",
+  "version": "1.8.1",
   "description": "Unofficial community plugin for Matomo Analytics. Query visits, page views, events, search keywords, traffic sources, and AI assistant referrals directly from Claude.",
   "author": {
     "name": "Lucas Pretti"
