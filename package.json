@@ -1,6 +1,6 @@
 {
   "name": "matomo-mcp-client",
-  "version": "1.8.5",
+  "version": "1.8.6",
   "main": "matomo-mcp-client.js",
   "type": "module",
   "dependencies": {
