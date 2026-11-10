@@ -26,7 +26,7 @@ jobs:
           fetch-depth: 0
 
       - name: Auto Version
-        uses: lucaspretti/auto-version-action@0b446273efe428fae520ab417ac020342aa2ca04 # v1.5.14
+        uses: lucaspretti/auto-version-action@1abac73bf57877ac97280511e78278f94060e063 # v1.5.16
         with:
           version-file: package.json
           production-branch: main
